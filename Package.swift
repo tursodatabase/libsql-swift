@@ -4,18 +4,18 @@
 import PackageDescription
 
 let package = Package(
-  name: "Libsql",
-  products: [
-    .library(name: "Libsql", targets: ["Libsql"])
-  ],
-  targets: [
-    .target(
-      name: "Libsql",
-      dependencies: ["CLibsql"],
-      linkerSettings: [
-        .unsafeFlags(["-L", "Sources/CLibsql/target/release"])
-      ]),
-    .systemLibrary(name: "CLibsql"),
-    .testTarget(name: "LibsqlTests", dependencies: ["Libsql"]),
-  ]
+    name: "Libsql",
+    products: [
+        .library(name: "Libsql", targets: ["Libsql"])
+    ],
+    targets: [
+        .target(
+            name: "Libsql",
+            dependencies: ["CLibsql"],
+            linkerSettings: [
+                .unsafeFlags(["-L", "Sources/CLibsql/target/release"])
+            ]),
+        .systemLibrary(name: "CLibsql"),
+        .testTarget(name: "LibsqlTests", dependencies: ["Libsql"]),
+    ]
 )
