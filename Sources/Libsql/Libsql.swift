@@ -1,7 +1,7 @@
 import CLibsql
 import Foundation
 
-enum Value {
+public enum Value {
     case integer(Int64)
     case text(String)
     case blob(Data)
@@ -9,32 +9,32 @@ enum Value {
     case null
 }
 
-protocol ValueRepresentable {
+public protocol ValueRepresentable {
     func toValue() -> Value
 }
 
 extension Value: ValueRepresentable {
-    func toValue() -> Value { self }
+    public func toValue() -> Value { self }
 }
 
 extension Int: ValueRepresentable {
-    func toValue() -> Value { .integer(Int64(self)) }
+    public func toValue() -> Value { .integer(Int64(self)) }
 }
 
 extension Int64: ValueRepresentable {
-    func toValue() -> Value { .integer(self) }
+    public func toValue() -> Value { .integer(self) }
 }
 
 extension String: ValueRepresentable {
-    func toValue() -> Value { .text(self) }
+    public func toValue() -> Value { .text(self) }
 }
 
 extension Data: ValueRepresentable {
-    func toValue() -> Value { .blob(self) }
+    public func toValue() -> Value { .blob(self) }
 }
 
 extension Double: ValueRepresentable {
-    func toValue() -> Value { .real(self) }
+    public func toValue() -> Value { .real(self) }
 }
 
 extension String? {
@@ -52,7 +52,7 @@ enum LibsqlError: Error {
     case unexpectedType
 }
 
-class Row {
+public class Row {
     var inner: libsql_row_t
 
     fileprivate init?(fromPtr inner: libsql_row_t?) {
@@ -63,7 +63,7 @@ class Row {
         self.inner = inner
     }
 
-    func getData(_ index: Int32) throws -> Data {
+    public func getData(_ index: Int32) throws -> Data {
         var slice: blob = blob()
 
         var err: UnsafePointer<CChar>?
@@ -77,7 +77,7 @@ class Row {
         return Data(bytes: slice.ptr, count: Int(slice.len))
     }
 
-    func getDouble(_ index: Int32) throws -> Double {
+    public func getDouble(_ index: Int32) throws -> Double {
         var double: Double = 0
 
         var err: UnsafePointer<CChar>?
@@ -89,7 +89,7 @@ class Row {
         return double
     }
 
-    func getString(_ index: Int32) throws -> String {
+    public func getString(_ index: Int32) throws -> String {
         var string: UnsafePointer<CChar>? = nil
 
         var err: UnsafePointer<CChar>?
@@ -103,7 +103,7 @@ class Row {
         return String(cString: string!)
     }
 
-    func getInt(_ index: Int32) throws -> Int {
+    public func getInt(_ index: Int32) throws -> Int {
         var integer: Int64 = 0
 
         var err: UnsafePointer<CChar>?
@@ -116,7 +116,7 @@ class Row {
     }
 }
 
-class Rows: Sequence, IteratorProtocol {
+public class Rows: Sequence, IteratorProtocol {
     var inner: libsql_rows_t
 
     fileprivate init(fromPtr inner: libsql_rows_t) {
@@ -127,7 +127,7 @@ class Rows: Sequence, IteratorProtocol {
         libsql_free_rows(self.inner)
     }
 
-    func next() -> Row? {
+    public func next() -> Row? {
         var row: libsql_row_t?
 
         var err: UnsafePointer<CChar>?
@@ -140,7 +140,7 @@ class Rows: Sequence, IteratorProtocol {
     }
 }
 
-class Statement {
+public class Statement {
     var inner: libsql_stmt_t
 
     deinit {
@@ -151,7 +151,7 @@ class Statement {
         self.inner = inner
     }
 
-    func execute() throws {
+    public func execute() throws {
         var err: UnsafePointer<CChar>? = nil
         if libsql_execute_stmt(self.inner, &err) != 0 {
             defer { libsql_free_string(err) }
@@ -159,17 +159,17 @@ class Statement {
         }
     }
 
-    func execute(_ params: [ValueRepresentable]) throws {
+    public func execute(_ params: [ValueRepresentable]) throws {
         try self.bind(params)
         return try self.execute()
     }
 
-    func execute(_ params: ValueRepresentable...) throws {
+    public func execute(_ params: ValueRepresentable...) throws {
         try self.bind(params)
         return try self.execute()
     }
 
-    func query() throws -> Rows {
+    public func query() throws -> Rows {
         var rows: libsql_rows_t? = nil
 
         var err: UnsafePointer<CChar>? = nil
@@ -181,21 +181,21 @@ class Statement {
         return Rows(fromPtr: rows!)
     }
 
-    func query(_ params: [ValueRepresentable]) throws -> Rows {
+    public func query(_ params: [ValueRepresentable]) throws -> Rows {
         try self.bind(params)
         return try self.query()
     }
 
-    func query(_ params: ValueRepresentable...) throws -> Rows {
+    public func query(_ params: ValueRepresentable...) throws -> Rows {
         try self.bind(params)
         return try self.query()
     }
 
-    func bind(_ params: ValueRepresentable...) throws {
+    public func bind(_ params: ValueRepresentable...) throws {
         return try self.bind(params)
     }
 
-    func bind(_ params: [ValueRepresentable]) throws {
+    public func bind(_ params: [ValueRepresentable]) throws {
         for (i, v) in params.enumerated() {
             let i = Int32(i + 1)
 
@@ -242,7 +242,7 @@ class Statement {
     }
 }
 
-class Connection {
+public class Connection {
     var inner: libsql_connection_t
 
     deinit {
@@ -253,7 +253,7 @@ class Connection {
         self.inner = inner
     }
 
-    func query(_ sql: String) throws -> Rows {
+    public func query(_ sql: String) throws -> Rows {
         var rows: libsql_rows_t? = nil
         try sql.withCString { sql in
             var err: UnsafePointer<CChar>? = nil
@@ -266,16 +266,16 @@ class Connection {
         return Rows(fromPtr: rows!)
     }
 
-    func query(_ sql: String, _ params: [ValueRepresentable]) throws -> Rows {
+    public func query(_ sql: String, _ params: [ValueRepresentable]) throws -> Rows {
         let stmt = try self.prepare(sql)
         return try stmt.query(params)
     }
 
-    func query(_ sql: String, _ params: ValueRepresentable...) throws -> Rows {
+    public func query(_ sql: String, _ params: ValueRepresentable...) throws -> Rows {
         return try self.query(sql, params as [ValueRepresentable])
     }
 
-    func execute(_ sql: String) throws {
+    public func execute(_ sql: String) throws {
         try sql.withCString { sql in
             var err: UnsafePointer<CChar>? = nil
             if libsql_execute(self.inner, sql, &err) != 0 {
@@ -285,16 +285,16 @@ class Connection {
         }
     }
 
-    func execute(_ sql: String, _ params: [ValueRepresentable]) throws {
+    public func execute(_ sql: String, _ params: [ValueRepresentable]) throws {
         let stmt = try self.prepare(sql)
         return try stmt.execute(params)
     }
 
-    func execute(_ sql: String, _ params: ValueRepresentable...) throws {
+    public func execute(_ sql: String, _ params: ValueRepresentable...) throws {
         return try self.execute(sql, params as [ValueRepresentable])
     }
 
-    func prepare(_ sql: String) throws -> Statement {
+    public func prepare(_ sql: String) throws -> Statement {
         var stmt: libsql_stmt_t? = nil
 
         try sql.withCString { sql in
@@ -309,14 +309,14 @@ class Connection {
     }
 }
 
-class Database {
+public class Database {
     var inner: libsql_database_t
 
     deinit {
         libsql_close(self.inner)
     }
 
-    func sync() throws {
+    public func sync() throws {
         var err: UnsafePointer<CChar>? = nil
         if libsql_sync(self.inner, &err) != 0 {
             defer { libsql_free_string(err) }
@@ -324,7 +324,7 @@ class Database {
         }
     }
 
-    func connect() throws -> Connection {
+    public func connect() throws -> Connection {
         var conn: libsql_connection_t? = nil
 
         var err: UnsafePointer<CChar>? = nil
@@ -336,7 +336,7 @@ class Database {
         return Connection(fromPtr: conn!)
     }
 
-    init(_ path: String) throws {
+    public init(_ path: String) throws {
         var db: libsql_database_t? = nil
 
         try path.withCString { path in
@@ -350,7 +350,7 @@ class Database {
         self.inner = db!
     }
 
-    init(url: String, authToken: String, withWebpki: Bool = false) throws {
+    public init(url: String, authToken: String, withWebpki: Bool = false) throws {
         var db: libsql_database_t? = nil
 
         try url.withCString { url in
@@ -374,7 +374,7 @@ class Database {
         self.inner = db!
     }
 
-    init(
+    public init(
         path: String,
         url: String,
         authToken: String,
