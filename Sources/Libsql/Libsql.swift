@@ -111,6 +111,7 @@ class Row {
             defer { libsql_free_string(err) }
             throw LibsqlError.runtimeError(String(cString: err!))
         }
+        
         return Int(integer)
     }
 }
@@ -136,7 +137,6 @@ class Rows: Sequence, IteratorProtocol {
         }
 
         return Row(fromPtr: row)
-
     }
 }
 

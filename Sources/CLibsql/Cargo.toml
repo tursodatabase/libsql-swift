@@ -18,6 +18,10 @@ tokio = { version = "1.29.1", features = [ "rt-multi-thread" ] }
 hyper-rustls = { version = "0.25", features = ["webpki-roots"]}
 libsql = "0.5.0"
 
+[package.metadata.xcframework]
+include-dir = "include/"
+macOS = true
+iOS = true
 
 # The produced binaries are too large for mobiles
 # When compiling for iOS or Android, you should turn on symbol stripping, lto and cut debug symbols

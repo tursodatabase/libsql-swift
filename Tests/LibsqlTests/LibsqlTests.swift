@@ -6,12 +6,12 @@ import XCTest
 final class LibsqlTests: XCTestCase {
     func testOpenDbMemory() throws {
         let db = try Database(":memory:")
-        let conn = try db.connect()
+        let _ = try db.connect()
     }
     
     func testOpenDbFile() throws {
         let db = try Database("test.db")
-        let conn = try db.connect()
+        let _ = try db.connect()
     }
 
     func testExecute() throws {
