@@ -378,7 +378,7 @@ public class Database {
         path: String,
         url: String,
         authToken: String,
-        readYourWrites: Bool = false,
+        readYourWrites: Bool = true,
         encryptionKey: String? = nil,
         syncInterval: Int = 0,
         withWebpki: Bool = false
