@@ -1,170 +1,232 @@
-#ifndef LIBSQL_EXPERIMENTAL_H
-#define LIBSQL_EXPERIMENTAL_H
+#ifndef LIBSQL_H
+#define LIBSQL_H
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
-#define LIBSQL_INT 1
+typedef struct libsql_error_t libsql_error_t;
 
-#define LIBSQL_FLOAT 2
+typedef enum __attribute__((__packed__)
+) { LIBSQL_CYPHER_DEFAULT = 0,
+    LIBSQL_CYPHER_AES256,
+} libsql_cypher_t;
 
-#define LIBSQL_TEXT 3
+typedef enum __attribute__((__packed__)
+) { LIBSQL_TYPE_INTEGER = 1,
+    LIBSQL_TYPE_REAL = 2,
+    LIBSQL_TYPE_TEXT = 3,
+    LIBSQL_TYPE_BLOB = 4,
+    LIBSQL_TYPE_NULL = 5,
+} libsql_type_t;
 
-#define LIBSQL_BLOB 4
-
-#define LIBSQL_NULL 5
-
-typedef struct libsql_connection libsql_connection;
-
-typedef struct libsql_database libsql_database;
-
-typedef struct libsql_row libsql_row;
-
-typedef struct libsql_rows libsql_rows;
-
-typedef struct libsql_rows_future libsql_rows_future;
-
-typedef struct libsql_stmt libsql_stmt;
-
-typedef const libsql_database *libsql_database_t;
-
-typedef struct {
-  int frame_no;
-  int frames_synced;
-} replicated;
+typedef enum __attribute__((__packed__)
+) { LIBSQL_TRACING_LEVEL_ERROR = 1,
+    LIBSQL_TRACING_LEVEL_WARN,
+    LIBSQL_TRACING_LEVEL_INFO,
+    LIBSQL_TRACING_LEVEL_DEBUG,
+    LIBSQL_TRACING_LEVEL_TRACE,
+} libsql_tracing_level_t;
 
 typedef struct {
-  const char *db_path;
-  const char *primary_url;
-  const char *auth_token;
-  char read_your_writes;
-  const char *encryption_key;
-  int sync_interval;
-  char with_webpki;
-} libsql_config;
-
-typedef const libsql_connection *libsql_connection_t;
-
-typedef const libsql_stmt *libsql_stmt_t;
-
-typedef const libsql_rows *libsql_rows_t;
-
-typedef const libsql_rows_future *libsql_rows_future_t;
-
-typedef const libsql_row *libsql_row_t;
+    const char *message;
+    const char *target;
+    const char *file;
+    uint64_t timestamp;
+    size_t line;
+    libsql_tracing_level_t level;
+} libsql_log_t;
 
 typedef struct {
-  const char *ptr;
-  int len;
-} blob;
+    libsql_error_t *err;
+    void *inner;
+} libsql_database_t;
 
-#ifdef __cplusplus
-extern "C" {
-#endif // __cplusplus
+typedef struct {
+    libsql_error_t *err;
+    void *inner;
+} libsql_connection_t;
 
-int libsql_sync(libsql_database_t db, const char **out_err_msg);
+typedef struct {
+    libsql_error_t *err;
+    void *inner;
+} libsql_parameters_t;
 
-int libsql_sync2(libsql_database_t db, replicated *out_replicated, const char **out_err_msg);
+typedef struct {
+    libsql_error_t *err;
+    void *inner;
+} libsql_statement_t;
 
-int libsql_open_sync(const char *db_path,
-                     const char *primary_url,
-                     const char *auth_token,
-                     char read_your_writes,
-                     const char *encryption_key,
-                     libsql_database_t *out_db,
-                     const char **out_err_msg);
+typedef struct {
+    libsql_error_t *err;
+    void *inner;
+} libsql_transaction_t;
 
-int libsql_open_sync_with_webpki(const char *db_path,
-                                 const char *primary_url,
-                                 const char *auth_token,
-                                 char read_your_writes,
-                                 const char *encryption_key,
-                                 libsql_database_t *out_db,
-                                 const char **out_err_msg);
+typedef struct {
+    libsql_error_t *err;
+    void *inner;
+} libsql_rows_t;
 
-int libsql_open_sync_with_config(libsql_config config, libsql_database_t *out_db, const char **out_err_msg);
+typedef struct {
+    libsql_error_t *err;
+    void *inner;
+} libsql_row_t;
 
-int libsql_open_ext(const char *url, libsql_database_t *out_db, const char **out_err_msg);
+typedef struct {
+    libsql_error_t *err;
+} libsql_batch_t;
 
-int libsql_open_file(const char *url, libsql_database_t *out_db, const char **out_err_msg);
+typedef struct {
+    const void *ptr;
+    size_t len;
+} libsql_slice_t;
 
-int libsql_open_remote(const char *url, const char *auth_token, libsql_database_t *out_db, const char **out_err_msg);
+typedef union {
+    int64_t integer;
+    double real;
+    libsql_slice_t text;
+    libsql_slice_t blob;
+} libsql_value_union_t;
 
-int libsql_open_remote_with_webpki(const char *url,
-                                   const char *auth_token,
-                                   libsql_database_t *out_db,
-                                   const char **out_err_msg);
+typedef struct {
+    libsql_value_union_t value;
+    libsql_type_t type;
+} libsql_value_t;
 
-void libsql_close(libsql_database_t db);
+typedef struct {
+    libsql_value_t ok;
+    libsql_error_t *err;
+} libsql_result_value_t;
 
-int libsql_connect(libsql_database_t db, libsql_connection_t *out_conn, const char **out_err_msg);
+typedef struct {
+    uint64_t frame_no;
+    uint64_t frames_synced;
+    libsql_error_t *err;
+} libsql_sync_t;
 
-int libsql_load_extension(libsql_connection_t conn,
-                          const char *path,
-                          const char *entry_point,
-                          const char **out_err_msg);
+typedef struct {
+    libsql_error_t *err;
+} libsql_bind_t;
 
-int libsql_reset(libsql_connection_t conn, const char **out_err_msg);
+typedef struct {
+    uint64_t rows_changed;
+    libsql_error_t *err;
+} libsql_execute_t;
 
-void libsql_disconnect(libsql_connection_t conn);
+/**
+ * Database description.
+ */
+typedef struct {
+    /** The url to the primary database */
+    const char *url;
+    /** Path to the database file or `:memory:` */
+    const char *path;
+    /** Auth token to access the primary */
+    const char *auth_token;
+    /** Encryption key to encrypt and decrypt the database in `path` */
+    const char *encryption_key;
+    /** Interval to periodicaly sync with primary */
+    uint64_t sync_interval;
+    /** Cypher to be used with `encryption_key` */
+    libsql_cypher_t cypher;
+    /** If set, disable `read_your_writes`. To mantain consistency. */
+    bool not_read_your_writes;
+    /** Enable Webpki connector */
+    bool webpki;
+} libsql_database_desc_t;
 
-int libsql_prepare(libsql_connection_t conn, const char *sql, libsql_stmt_t *out_stmt, const char **out_err_msg);
+typedef struct {
+    void (*logger)(libsql_log_t log);
+} libsql_config_t;
 
-int libsql_bind_int(libsql_stmt_t stmt, int idx, long long value, const char **out_err_msg);
+/** Setup some global info */
+const libsql_error_t *libsql_setup(libsql_config_t config);
 
-int libsql_bind_float(libsql_stmt_t stmt, int idx, double value, const char **out_err_msg);
+/** Get the error message from a error */
+const char *libsql_error_message(libsql_error_t *self);
 
-int libsql_bind_null(libsql_stmt_t stmt, int idx, const char **out_err_msg);
+/** Create or open a database */
+libsql_database_t libsql_database_init(libsql_database_desc_t desc);
 
-int libsql_bind_string(libsql_stmt_t stmt, int idx, const char *value, const char **out_err_msg);
+/** Sync frames with the primary */
+libsql_sync_t libsql_database_sync(libsql_database_t self);
 
-int libsql_bind_blob(libsql_stmt_t stmt, int idx, const unsigned char *value, int value_len, const char **out_err_msg);
+/** Connect with the database */
+libsql_connection_t libsql_database_connect(libsql_database_t self);
 
-int libsql_query_stmt(libsql_stmt_t stmt, libsql_rows_t *out_rows, const char **out_err_msg);
+/** Begin a transaction */
+libsql_transaction_t libsql_connection_transaction(libsql_connection_t self);
 
-int libsql_execute_stmt(libsql_stmt_t stmt, const char **out_err_msg);
+/** Send a batch statement in a connection */
+libsql_batch_t
+libsql_connection_batch(libsql_connection_t self, const char *sql);
 
-int libsql_reset_stmt(libsql_stmt_t stmt, const char **out_err_msg);
+/** Send a batch statement in a transaction */
+libsql_batch_t
+libsql_transaction_batch(libsql_transaction_t self, const char *sql);
 
-void libsql_free_stmt(libsql_stmt_t stmt);
+/** Prepare a statement in a connection */
+libsql_statement_t
+libsql_connection_prepare(libsql_connection_t self, const char *sql);
+/** Prepare a statement in a transaction */
+libsql_statement_t
+libsql_transaction_prepare(libsql_transaction_t self, const char *sql);
 
-int libsql_query(libsql_connection_t conn, const char *sql, libsql_rows_t *out_rows, const char **out_err_msg);
+/** Execute a statement */
+libsql_execute_t libsql_statement_execute(libsql_statement_t self);
+/** Query a statement */
+libsql_rows_t libsql_statement_query(libsql_statement_t self);
+/** Reset a statement */
+void libsql_statement_reset(libsql_statement_t self);
 
-int libsql_execute(libsql_connection_t conn, const char *sql, const char **out_err_msg);
+/** Get the next row from rows */
+libsql_row_t libsql_rows_next(libsql_rows_t self);
 
-void libsql_free_rows(libsql_rows_t res);
+/** Get the value at the the index */
+libsql_result_value_t libsql_row_value(libsql_row_t self, int32_t index);
+/** Get the column name at the the index */
+libsql_slice_t libsql_row_name(libsql_row_t self, int32_t index);
+/** Get row column count */
+int32_t libsql_row_length(libsql_row_t self);
+/** Check if the row is empty, indicating the end of `libsql_rows_next` */
+bool libsql_row_empty(libsql_row_t self);
 
-void libsql_free_rows_future(libsql_rows_future_t res);
+/** Bind a named argument to a statement */
+libsql_bind_t libsql_statement_bind_named(
+    libsql_statement_t self,
+    const char *name,
+    libsql_value_t value
+);
+/** Bind a positional argument to a statement */
+libsql_bind_t
+libsql_statement_bind_value(libsql_statement_t self, libsql_value_t value);
 
-void libsql_wait_result(libsql_rows_future_t res);
+/** Create a libsql integer value */
+libsql_value_t libsql_integer(int64_t integer);
+/** Create a libsql real value */
+libsql_value_t libsql_real(double real);
+/** Create a libsql text value */
+libsql_value_t libsql_text(const char *ptr, size_t len);
+/** Create a libsql blob value */
+libsql_value_t libsql_blob(const uint8_t *ptr, size_t len);
 
-int libsql_column_count(libsql_rows_t res);
+/** Deallocate and close a error */
+void libsql_error_deinit(libsql_error_t *self);
+/** Deallocate and close a database */
+void libsql_database_deinit(libsql_database_t self);
+/** Deallocate and close a connection */
+void libsql_connection_deinit(libsql_connection_t self);
+/** Deallocate and close a statement */
+void libsql_statement_deinit(libsql_statement_t self);
+/** Deallocate and commit a transaction (transaction becomes invalid) */
+void libsql_transaction_commit(libsql_transaction_t self);
+/** Deallocate and rollback a transaction (transaction becomes invalid) */
+void libsql_transaction_rollback(libsql_transaction_t self);
+/** Deallocate and close rows */
+void libsql_rows_deinit(libsql_rows_t self);
+/** Deallocate and close a row */
+void libsql_row_deinit(libsql_row_t self);
+/** Deallocate a slice */
+void libsql_slice_deinit(libsql_slice_t value);
 
-int libsql_column_name(libsql_rows_t res, int col, const char **out_name, const char **out_err_msg);
-
-int libsql_column_type(libsql_rows_t res, libsql_row_t row, int col, int *out_type, const char **out_err_msg);
-
-uint64_t libsql_changes(libsql_connection_t conn);
-
-int64_t libsql_last_insert_rowid(libsql_connection_t conn);
-
-int libsql_next_row(libsql_rows_t res, libsql_row_t *out_row, const char **out_err_msg);
-
-void libsql_free_row(libsql_row_t res);
-
-int libsql_get_string(libsql_row_t res, int col, const char **out_value, const char **out_err_msg);
-
-void libsql_free_string(const char *ptr);
-
-int libsql_get_int(libsql_row_t res, int col, long long *out_value, const char **out_err_msg);
-
-int libsql_get_float(libsql_row_t res, int col, double *out_value, const char **out_err_msg);
-
-int libsql_get_blob(libsql_row_t res, int col, blob *out_blob, const char **out_err_msg);
-
-void libsql_free_blob(blob b);
-
-#ifdef __cplusplus
-} // extern "C"
-#endif // __cplusplus
-
-#endif /* LIBSQL_EXPERIMENTAL_H */
+#endif /* LIBSQL_H */

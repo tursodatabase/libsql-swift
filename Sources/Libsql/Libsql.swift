@@ -37,6 +37,36 @@ extension Double: ValueRepresentable {
     public func toValue() -> Value { .real(self) }
 }
 
+public protocol Prepareable {
+    func prepare(_ sql: String) throws -> Statement
+}
+
+extension Prepareable {
+    func execute(_ sql: String) throws -> Int {
+        return try self.prepare(sql).execute()
+    }
+    
+    func execute(_ sql: String, _ params: [String: ValueRepresentable]) throws -> Int {
+        return try self.prepare(sql).bind(params).execute()
+    }
+    
+    func execute(_ sql: String, _ params: [ValueRepresentable]) throws -> Int {
+        return try self.prepare(sql).bind(params).execute()
+    }
+    
+    func query(_ sql: String) throws -> Rows {
+        return try self.prepare(sql).query()
+    }
+    
+    func query(_ sql: String, _ params: [String: ValueRepresentable]) throws -> Rows {
+        return try self.prepare(sql).bind(params).query()
+    }
+    
+    func query(_ sql: String, _ params: [ValueRepresentable]) throws -> Rows {
+        return try self.prepare(sql).bind(params).query()
+    }
+}
+
 extension String? {
     func withCString<Result>(_ body: (UnsafePointer<Int8>?) throws -> Result) rethrows -> Result {
         if self == nil {
@@ -47,265 +77,276 @@ extension String? {
     }
 }
 
+func errIf(_ err: OpaquePointer!) throws {
+    if (err != nil) {
+        defer { libsql_error_deinit(err) }
+        throw LibsqlError.runtimeError(String(cString: libsql_error_message(err)!))
+    }
+}
+
 enum LibsqlError: Error {
     case runtimeError(String)
-    case unexpectedType
+    case typeMismatch
 }
 
 public class Row {
     var inner: libsql_row_t
 
-    fileprivate init?(fromPtr inner: libsql_row_t?) {
+    fileprivate init?(from inner: libsql_row_t?) {
         guard let inner = inner else {
             return nil
         }
 
         self.inner = inner
     }
+    
+    public func get(_ index: Int32) throws -> Value {
+        let result = libsql_row_value(self.inner, index)
+        try errIf(result.err)
+       
+        switch result.ok.type {
+        case LIBSQL_TYPE_BLOB:
+            let slice = result.ok.value.blob
+            defer { libsql_slice_deinit(slice) }
+            return .blob(Data(bytes: slice.ptr, count: Int(slice.len)))
+        case LIBSQL_TYPE_TEXT:
+            let slice = result.ok.value.text
+            defer { libsql_slice_deinit(slice) }
+            return .text(String(cString: slice.ptr.assumingMemoryBound(to: UInt8.self)))
+        case LIBSQL_TYPE_INTEGER:
+            return .integer(result.ok.value.integer)
+        case LIBSQL_TYPE_REAL:
+            return .real(result.ok.value.real)
+        case LIBSQL_TYPE_NULL:
+            return .null
+        default:
+            preconditionFailure()
+        }
+    }
 
     public func getData(_ index: Int32) throws -> Data {
-        var slice: blob = blob()
-
-        var err: UnsafePointer<CChar>?
-        if libsql_get_blob(self.inner, index, &slice, &err) != 0 {
-            defer { libsql_free_string(err) }
-            throw LibsqlError.runtimeError(String(cString: err!))
+        guard case let .blob(data) = try self.get(index) else {
+            throw LibsqlError.typeMismatch
         }
-
-        defer { libsql_free_blob(slice) }
-
-        return Data(bytes: slice.ptr, count: Int(slice.len))
+        return data
     }
 
     public func getDouble(_ index: Int32) throws -> Double {
-        var double: Double = 0
-
-        var err: UnsafePointer<CChar>?
-        if libsql_get_float(self.inner, index, &double, &err) != 0 {
-            defer { libsql_free_string(err) }
-            throw LibsqlError.runtimeError(String(cString: err!))
+        guard case let .real(double) = try self.get(index) else {
+            throw LibsqlError.typeMismatch
         }
-
         return double
     }
 
     public func getString(_ index: Int32) throws -> String {
-        var string: UnsafePointer<CChar>? = nil
-
-        var err: UnsafePointer<CChar>?
-        if libsql_get_string(self.inner, index, &string, &err) != 0 {
-            defer { libsql_free_string(err) }
-            throw LibsqlError.runtimeError(String(cString: err!))
+        guard case let .text(string) = try self.get(index) else {
+            throw LibsqlError.typeMismatch
         }
-
-        defer { libsql_free_string(string) }
-
-        return String(cString: string!)
+        return string
     }
 
     public func getInt(_ index: Int32) throws -> Int {
-        var integer: Int64 = 0
-
-        var err: UnsafePointer<CChar>?
-        if libsql_get_int(self.inner, index, &integer, &err) != 0 {
-            defer { libsql_free_string(err) }
-            throw LibsqlError.runtimeError(String(cString: err!))
+        guard case let .integer(int) = try self.get(index) else {
+            throw LibsqlError.typeMismatch
         }
-        
-        return Int(integer)
+        return Int(int)
     }
 }
 
 public class Rows: Sequence, IteratorProtocol {
     var inner: libsql_rows_t
 
-    fileprivate init(fromPtr inner: libsql_rows_t) {
+    fileprivate init(from inner: libsql_rows_t) {
         self.inner = inner
     }
 
     deinit {
-        libsql_free_rows(self.inner)
+        libsql_rows_deinit(self.inner)
     }
 
     public func next() -> Row? {
-        var row: libsql_row_t?
-
-        var err: UnsafePointer<CChar>?
-        guard libsql_next_row(self.inner, &row, &err) == 0 else {
-            defer { libsql_free_string(err) }
-            fatalError(String(cString: err!))
+        let row = libsql_rows_next(self.inner)
+        try! errIf(row.err)
+        
+        if libsql_row_empty(row) {
+            return nil
         }
-
-        return Row(fromPtr: row)
+        
+        return Row(from: row)
     }
 }
 
 public class Statement {
-    var inner: libsql_stmt_t
+    var inner: libsql_statement_t
 
     deinit {
-        libsql_free_stmt(self.inner)
+        libsql_statement_deinit(self.inner)
     }
 
-    fileprivate init(fromPtr inner: libsql_stmt_t) {
+    fileprivate init(from inner: libsql_statement_t) {
         self.inner = inner
     }
 
-    public func execute() throws {
-        var err: UnsafePointer<CChar>? = nil
-        if libsql_execute_stmt(self.inner, &err) != 0 {
-            defer { libsql_free_string(err) }
-            throw LibsqlError.runtimeError(String(cString: err!))
-        }
-    }
-
-    public func execute(_ params: [ValueRepresentable]) throws {
-        try self.bind(params)
-        return try self.execute()
-    }
-
-    public func execute(_ params: ValueRepresentable...) throws {
-        try self.bind(params)
-        return try self.execute()
+    public func execute() throws -> Int {
+        let exec = libsql_statement_execute(self.inner)
+        try errIf(exec.err)
+        
+        return Int(exec.rows_changed)
     }
 
     public func query() throws -> Rows {
-        var rows: libsql_rows_t? = nil
+        let rows = libsql_statement_query(self.inner)
+        try errIf(rows.err)
 
-        var err: UnsafePointer<CChar>? = nil
-        if libsql_query_stmt(self.inner, &rows, &err) != 0 {
-            defer { libsql_free_string(err) }
-            throw LibsqlError.runtimeError(String(cString: err!))
-        }
-
-        return Rows(fromPtr: rows!)
+        return Rows(from: rows)
     }
-
-    public func query(_ params: [ValueRepresentable]) throws -> Rows {
-        try self.bind(params)
-        return try self.query()
-    }
-
-    public func query(_ params: ValueRepresentable...) throws -> Rows {
-        try self.bind(params)
-        return try self.query()
-    }
-
-    public func bind(_ params: ValueRepresentable...) throws {
-        return try self.bind(params)
-    }
-
-    public func bind(_ params: [ValueRepresentable]) throws {
-        for (i, v) in params.enumerated() {
-            let i = Int32(i + 1)
-
-            switch v.toValue() {
+    
+    public func bind(_ params: [String: ValueRepresentable]) throws -> Self {
+        for (name, value) in params {
+            switch value.toValue() {
             case .integer(let integer):
-                var err: UnsafePointer<CChar>? = nil
-                if libsql_bind_int(self.inner, i, integer, &err) != 0 {
-                    defer { libsql_free_string(err) }
-                    throw LibsqlError.runtimeError(String(cString: err!))
-                }
+                let bind = libsql_statement_bind_named(
+                    self.inner,
+                    name,
+                    libsql_integer(integer)
+                )
+                try errIf(bind.err)
             case .text(let text):
+                let len = text.count + 1
                 try text.withCString { text in
-                    var err: UnsafePointer<CChar>? = nil
-                    if libsql_bind_string(self.inner, i, text, &err) != 0 {
-                        defer { libsql_free_string(err) }
-                        throw LibsqlError.runtimeError(String(cString: err!))
-                    }
+                    let bind = libsql_statement_bind_named(
+                        self.inner,
+                        name,
+                        libsql_text(text, len)
+                    )
+                    try errIf(bind.err)
                 }
             case .blob(let slice):
                 try slice.withUnsafeBytes { slice in
-                    let base = slice.baseAddress?.assumingMemoryBound(to: UInt8.self)
-                    let len = Int32(slice.count)
-
-                    var err: UnsafePointer<CChar>? = nil
-                    if libsql_bind_blob(self.inner, i, base, len, &err) != 0 {
-                        defer { libsql_free_string(err) }
-                        throw LibsqlError.runtimeError(String(cString: err!))
-                    }
+                    let bind = libsql_statement_bind_named(
+                        self.inner,
+                        name,
+                        libsql_blob(slice.baseAddress, slice.count)
+                    )
+                    try errIf(bind.err)
                 }
             case .real(let real):
-                var err: UnsafePointer<CChar>? = nil
-                if libsql_bind_float(self.inner, i, real, &err) != 0 {
-                    defer { libsql_free_string(err) }
-                    throw LibsqlError.runtimeError(String(cString: err!))
-                }
+                let bind = libsql_statement_bind_named(
+                    self.inner,
+                    name,
+                    libsql_real(real)
+                )
+                try errIf(bind.err)
             case .null:
-                var err: UnsafePointer<CChar>? = nil
-                if libsql_bind_null(self.inner, i, &err) != 0 {
-                    defer { libsql_free_string(err) }
-                    throw LibsqlError.runtimeError(String(cString: err!))
-                }
+                let bind = libsql_statement_bind_named(
+                    self.inner,
+                    name,
+                    libsql_value_t(value: .init(), type: LIBSQL_TYPE_NULL)
+                )
+                try errIf(bind.err)
             }
         }
+        
+        return self;
+    }
+
+    public func bind(_ params: [ValueRepresentable]) throws -> Self {
+        for value in params {
+            switch value.toValue() {
+            case .integer(let integer):
+                let bind = libsql_statement_bind_value(
+                    self.inner,
+                    libsql_integer(integer)
+                )
+                try errIf(bind.err)
+            case .text(let text):
+                let len = text.count + 1
+                try text.withCString { text in
+                    let bind = libsql_statement_bind_value(
+                        self.inner,
+                        libsql_text(text, len)
+                    )
+                    try errIf(bind.err)
+                }
+            case .blob(let slice):
+                try slice.withUnsafeBytes { slice in
+                    let bind = libsql_statement_bind_value(
+                        self.inner,
+                        libsql_blob(slice.baseAddress, slice.count)
+                    )
+                    try errIf(bind.err)
+                }
+            case .real(let real):
+                let bind = libsql_statement_bind_value(self.inner, libsql_real(real))
+                try errIf(bind.err)
+            case .null:
+                let bind = libsql_statement_bind_value(
+                    self.inner,
+                    libsql_value_t(value: .init(), type: LIBSQL_TYPE_NULL)
+                )
+                try errIf(bind.err)
+            }
+        }
+        
+        return self;
     }
 }
 
-public class Connection {
-    var inner: libsql_connection_t
-
-    deinit {
-        libsql_disconnect(self.inner)
+public class Transaction: Prepareable {
+    var inner: libsql_transaction_t
+    
+    public consuming func commit() {
+        libsql_transaction_commit(self.inner)
+    }
+    
+    public consuming func rollback() {
+        libsql_transaction_rollback(self.inner)
     }
 
-    fileprivate init(fromPtr inner: libsql_connection_t) {
+    fileprivate init(from inner: libsql_transaction_t) {
         self.inner = inner
     }
-
-    public func query(_ sql: String) throws -> Rows {
-        var rows: libsql_rows_t? = nil
-        try sql.withCString { sql in
-            var err: UnsafePointer<CChar>? = nil
-            if libsql_query(self.inner, sql, &rows, &err) != 0 {
-                defer { libsql_free_string(err) }
-                throw LibsqlError.runtimeError(String(cString: err!))
-            }
-        }
-
-        return Rows(fromPtr: rows!)
-    }
-
-    public func query(_ sql: String, _ params: [ValueRepresentable]) throws -> Rows {
-        let stmt = try self.prepare(sql)
-        return try stmt.query(params)
-    }
-
-    public func query(_ sql: String, _ params: ValueRepresentable...) throws -> Rows {
-        return try self.query(sql, params as [ValueRepresentable])
-    }
-
-    public func execute(_ sql: String) throws {
-        try sql.withCString { sql in
-            var err: UnsafePointer<CChar>? = nil
-            if libsql_execute(self.inner, sql, &err) != 0 {
-                defer { libsql_free_string(err) }
-                throw LibsqlError.runtimeError(String(cString: err!))
-            }
-        }
-    }
-
-    public func execute(_ sql: String, _ params: [ValueRepresentable]) throws {
-        let stmt = try self.prepare(sql)
-        return try stmt.execute(params)
-    }
-
-    public func execute(_ sql: String, _ params: ValueRepresentable...) throws {
-        return try self.execute(sql, params as [ValueRepresentable])
+    
+    public func execute_batch(_ sql: String) {
+        libsql_transaction_batch(self.inner, sql)
     }
 
     public func prepare(_ sql: String) throws -> Statement {
-        var stmt: libsql_stmt_t? = nil
+        let stmt = libsql_transaction_prepare(self.inner, sql);
+        try errIf(stmt.err)
+        
+        return Statement(from: stmt)
+    }
+    
+}
 
-        try sql.withCString { sql in
-            var err: UnsafePointer<CChar>? = nil
-            if libsql_prepare(self.inner, sql, &stmt, &err) != 0 {
-                defer { libsql_free_string(err) }
-                throw LibsqlError.runtimeError(String(cString: err!))
-            }
-        }
+public class Connection: Prepareable {
+    var inner: libsql_connection_t
 
-        return Statement(fromPtr: stmt!)
+    deinit {
+        libsql_connection_deinit(self.inner)
+    }
+
+    fileprivate init(from inner: libsql_connection_t) {
+        self.inner = inner
+    }
+    
+    public func transaction() throws -> Transaction {
+        let tx = libsql_connection_transaction(self.inner)
+        try errIf(tx.err);
+        
+        return Transaction(from: tx)
+    }
+    
+    public func execute_batch(_ sql: String) {
+        libsql_connection_batch(self.inner, sql)
+    }
+
+    public func prepare(_ sql: String) throws -> Statement {
+        let stmt = libsql_connection_prepare(self.inner, sql);
+        try errIf(stmt.err)
+        
+        return Statement(from: stmt)
     }
 }
 
@@ -313,65 +354,48 @@ public class Database {
     var inner: libsql_database_t
 
     deinit {
-        libsql_close(self.inner)
+        libsql_database_deinit(self.inner)
     }
 
     public func sync() throws {
-        var err: UnsafePointer<CChar>? = nil
-        if libsql_sync(self.inner, &err) != 0 {
-            defer { libsql_free_string(err) }
-            throw LibsqlError.runtimeError(String(cString: err!))
-        }
+        let sync = libsql_database_sync(self.inner)
+        try errIf(sync.err)
     }
 
     public func connect() throws -> Connection {
-        var conn: libsql_connection_t? = nil
-
-        var err: UnsafePointer<CChar>? = nil
-        if libsql_connect(self.inner, &conn, &err) != 0 {
-            defer { libsql_free_string(err) }
-            throw LibsqlError.runtimeError(String(cString: err!))
-        }
-
-        return Connection(fromPtr: conn!)
+        let conn = libsql_database_connect(self.inner)
+        try errIf(conn.err)
+        
+        return Connection(from: conn)
     }
 
     public init(_ path: String) throws {
-        var db: libsql_database_t? = nil
-
-        try path.withCString { path in
-            var err: UnsafePointer<CChar>? = nil
-            if libsql_open_ext(path, &db, &err) != 0 {
-                defer { libsql_free_string(err) }
-                throw LibsqlError.runtimeError(String(cString: err!))
-            }
+        self.inner = try path.withCString { path in
+            var desc = libsql_database_desc_t()
+            desc.path = path
+            
+            let db = libsql_database_init(desc)
+            try errIf(db.err)
+            
+            return db
         }
-
-        self.inner = db!
     }
 
     public init(url: String, authToken: String, withWebpki: Bool = false) throws {
-        var db: libsql_database_t? = nil
-
-        try url.withCString { url in
+        self.inner = try url.withCString { url in
             try authToken.withCString { authToken in
-                if withWebpki {
-                    var err: UnsafePointer<CChar>? = nil
-                    if libsql_open_remote(url, authToken, &db, &err) != 0 {
-                        defer { libsql_free_string(err) }
-                        throw LibsqlError.runtimeError(String(cString: err!))
-                    }
-                } else {
-                    var err: UnsafePointer<CChar>? = nil
-                    if libsql_open_remote_with_webpki(url, authToken, &db, &err) != 0 {
-                        defer { libsql_free_string(err) }
-                        throw LibsqlError.runtimeError(String(cString: err!))
-                    }
-                }
+                var desc = libsql_database_desc_t()
+                desc.url = url
+                desc.auth_token = authToken
+                desc.webpki = withWebpki
+                
+                let db = libsql_database_init(desc)
+                try errIf(db.err)
+                
+                return db
             }
         }
 
-        self.inner = db!
     }
 
     public init(
@@ -380,37 +404,29 @@ public class Database {
         authToken: String,
         readYourWrites: Bool = true,
         encryptionKey: String? = nil,
-        syncInterval: Int = 0,
+        syncInterval: UInt64 = 0,
         withWebpki: Bool = false
     ) throws {
-        var db: libsql_database_t? = nil
-
-        try path.withCString { path in
+        self.inner = try path.withCString { path in
             try url.withCString { url in
                 try authToken.withCString { authToken in
                     try encryptionKey.withCString { encryptionKey in
-                        var err: UnsafePointer<CChar>? = nil
-                        if libsql_open_sync_with_config(
-                            libsql_config(
-                                db_path: path,
-                                primary_url: url,
-                                auth_token: authToken,
-                                read_your_writes: Int8(readYourWrites ? 1 : 0 as Int),
-                                encryption_key: encryptionKey,
-                                sync_interval: Int32(syncInterval),
-                                with_webpki: Int8(readYourWrites ? 1 : 0 as Int)
-                            ),
-                            &db,
-                            &err
-                        ) != 0 {
-                            defer { libsql_free_string(err) }
-                            throw LibsqlError.runtimeError(String(cString: err!))
-                        }
+                        var desc = libsql_database_desc_t()
+                        desc.path = path
+                        desc.url = url
+                        desc.auth_token = authToken
+                        desc.encryption_key = encryptionKey
+                        desc.not_read_your_writes = !readYourWrites
+                        desc.sync_interval = syncInterval
+                        desc.webpki = withWebpki
+                        
+                        let db = libsql_database_init(desc)
+                        try errIf(db.err)
+                        
+                        return db
                     }
                 }
             }
         }
-
-        self.inner = db!
     }
 }

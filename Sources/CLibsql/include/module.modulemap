@@ -1,4 +1,0 @@
-module CLibsql {
-    header "libsql.h"
-    export *
-}

@@ -2,6 +2,8 @@
 
 set -xe +f
 
+cd libsql-c
+
 export MACOSX_DEPLOYMENT_TARGET=10.13
 
 cargo build --target aarch64-apple-ios --release
@@ -26,10 +28,17 @@ lipo \
     ./target/aarch64-apple-darwin/release/liblibsql.a \
     -create -output ./target/universal-macos/release/liblibsql.a
 
-rm -rf CLibsql.xcframework
+rm -rf ../CLibsql.xcframework
+
+include_dir=`mktemp -d`
+
+cp ./libsql.h $include_dir/
+cp ../module.modulemap $include_dir/
 
 xcodebuild -create-xcframework \
-    -library ./target/universal-ios-sim/release/liblibsql.a -headers ./include \
-    -library ./target/aarch64-apple-ios/release/liblibsql.a -headers ./include \
-    -library ./target/universal-macos/release/liblibsql.a -headers ./include \
-    -output CLibsql.xcframework
+    -library ./target/universal-ios-sim/release/liblibsql.a -headers $include_dir \
+    -library ./target/aarch64-apple-ios/release/liblibsql.a -headers $include_dir \
+    -library ./target/universal-macos/release/liblibsql.a -headers $include_dir \
+    -output ../CLibsql.xcframework
+
+rm -rf $include_dir
