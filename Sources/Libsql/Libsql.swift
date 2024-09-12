@@ -41,7 +41,7 @@ public protocol Prepareable {
     func prepare(_ sql: String) throws -> Statement
 }
 
-extension Prepareable {
+public extension Prepareable {
     func execute(_ sql: String) throws -> Int {
         return try self.prepare(sql).execute()
     }
