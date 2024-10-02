@@ -307,8 +307,9 @@ public class Transaction: Prepareable {
         self.inner = inner
     }
     
-    public func execute_batch(_ sql: String) {
-        libsql_transaction_batch(self.inner, sql)
+    public func executeBatch(_ sql: String) throws {
+        let batch = libsql_transaction_batch(self.inner, sql)
+        try errIf(batch.err)
     }
 
     public func prepare(_ sql: String) throws -> Statement {
@@ -334,12 +335,13 @@ public class Connection: Prepareable {
     public func transaction() throws -> Transaction {
         let tx = libsql_connection_transaction(self.inner)
         try errIf(tx.err);
-        
+
         return Transaction(from: tx)
     }
     
-    public func execute_batch(_ sql: String) {
-        libsql_connection_batch(self.inner, sql)
+    public func executeBatch(_ sql: String) throws {
+        let batch = libsql_connection_batch(self.inner, sql)
+        try errIf(batch.err)
     }
 
     public func prepare(_ sql: String) throws -> Statement {

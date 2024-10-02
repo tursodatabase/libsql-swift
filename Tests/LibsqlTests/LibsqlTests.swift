@@ -19,11 +19,29 @@ final class LibsqlTests: XCTestCase {
         let conn = try db.connect()
         _ = try conn.execute("create table test (i integer, s text)")
         _ = try conn.execute("insert into test values (?, ?)", [1, "lorem ipsum"])
+        let row = try conn.query("select * from test").next()!;
+
+        XCTAssertEqual(try row.getInt(0), 1)
+        XCTAssertEqual(try row.getString(1), "lorem ipsum")
+    }
+
+    func testExecuteBatch() throws {
+        let db = try Database(":memory:")
+        let conn = try db.connect()
+        _ = try conn.executeBatch("""
+            create table test (i integer, s text);
+            insert into test values (1, \"lorem ipsum\");
+        """)
+        let row = try conn.query("select * from test").next()!;
+
+        XCTAssertEqual(try row.getInt(0), 1)
+        XCTAssertEqual(try row.getString(1), "lorem ipsum")
     }
 
     func testQuerySimple() throws {
         let db = try Database(":memory:")
         let conn = try db.connect()
+
         XCTAssertEqual(try conn.query("select 1").next()!.getInt(0), 1)
         XCTAssertEqual(try conn.query("select :named", [":named": 1]).next()!.getInt(0), 1)
         XCTAssertEqual(try conn.query("select ?", [1]).next()!.getInt(0), 1)
