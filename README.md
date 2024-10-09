@@ -49,6 +49,9 @@
 - ✨ Works with Turso [AI & Vector Search](https://docs.turso.tech/features/ai-and-embeddings)
 - 📱 Works with macOS, iPadOS, tvOS, watchOS & iOS
 
+> [!WARNING]
+> This SDK is currently in technical preview. <a href="https://tur.so/discord-swift">Join us in Discord</a> to report any issues.
+
 ## Install
 
 Add `tursodatabase/libsql-swift` to your SwiftPM dependencies:
@@ -72,7 +75,7 @@ The example below uses Embedded Replicas and syncs data every 1000ms from Turso.
 ```swift
 import Libsql
 
-let db = try Libsql.Database(
+let db = try Database(
     path: "./local.db",
     url: "TURSO_DATABASE_URL",
     authToken: "TURSO_AUTH_TOKEN",
