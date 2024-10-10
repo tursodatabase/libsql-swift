@@ -11,7 +11,9 @@ var package = Package(
         .library(name: "Libsql", targets: ["Libsql"]),
         
         // Examples
-        .executable(name: "SimpleQuery", targets: ["SimpleQuery"])
+        .executable(name: "Query", targets: ["Query"]),
+        .executable(name: "Transaction", targets: ["Transaction"]),
+        .executable(name: "Vector", targets: ["Vector"]),
     ],
     targets: [
         .target(name: "Libsql", dependencies: ["CLibsql"]),
@@ -20,9 +22,19 @@ var package = Package(
        
         // Examples
         .executableTarget(
-            name: "SimpleQuery",
+            name: "Query",
             dependencies: ["Libsql"],
-            path: "Examples/SimpleQuery"
+            path: "Examples/Query"
+        ),
+        .executableTarget(
+            name: "Transaction",
+            dependencies: ["Libsql"],
+            path: "Examples/Transaction"
+        ),
+        .executableTarget(
+            name: "Vector",
+            dependencies: ["Libsql"],
+            path: "Examples/Vector"
         ),
     ]
 )
