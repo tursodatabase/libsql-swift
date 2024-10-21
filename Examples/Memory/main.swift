@@ -1,4 +1,3 @@
-
 import Foundation
 import Libsql
 
@@ -17,4 +16,3 @@ _ = try conn.executeBatch("""
 for row in try conn.query("select * from users", [1]) {
     print(try row.getInt(0), try row.getString(1))
 }
-
