@@ -13,7 +13,6 @@ var package = Package(
         // Examples
         .executable(name: "Query", targets: ["Query"]),
         .executable(name: "Transaction", targets: ["Transaction"]),
-        .executable(name: "Vector", targets: ["Vector"]),
         .executable(name: "Batch", targets: ["Batch"]),
     ],
     targets: [
@@ -31,11 +30,6 @@ var package = Package(
             name: "Transaction",
             dependencies: ["Libsql"],
             path: "Examples/Transaction"
-        ),
-        .executableTarget(
-            name: "Vector",
-            dependencies: ["Libsql"],
-            path: "Examples/Vector"
         ),
         .executableTarget(
             name: "Batch",
@@ -72,6 +66,12 @@ var package = Package(
             dependencies: ["Libsql"],
             path: "Examples/Transactions",
             exclude: ["README.md", "local.db"]
+        ),
+        .executableTarget(
+            name: "Vector",
+            dependencies: ["Libsql"],
+            path: "Examples/Vector",
+            exclude: ["README.md"]
         ),
     ]
 )
