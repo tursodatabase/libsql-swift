@@ -6,25 +6,23 @@ let conn = try db.connect()
 
 _ = try conn.executeBatch("""
     create table users(id integer primary key autoincrement, name text);
-    insert into users (name) values ('Iku Turso');
+    insert into users (name) values ('First Iku Turso');
 """)
 
 let tx = try conn.transaction();
 
-let forenames = ["John", "Mary", "Alice", "Mark"]
-let surnames = ["Doe", "Smith", "Jones", "Taylor"]
+let fullNames = ["John Doe", "Mary Smith", "Alice Jones", "Mark Taylor"]
 
-for forename in forenames {
-    for surname in surnames {
-        _ = try tx.execute(
-            "insert into users (name) values (?)",
-            ["\(forename) \(surname)"]
-        );
-    }
+for fullName in fullNames {
+    _ = try tx.execute(
+        "insert into users (name) values (?)",
+        [fullName]
+    );
 }
 
 tx.rollback() // Discards all inserts
 
+_ = try conn.execute("insert into users (name) values (?)", ["Second Iku Turso"])
 
 // Only returns "1 Iku turso", since the transaction was rollbacked.
 for row in try conn.query("select * from users", [1]) {

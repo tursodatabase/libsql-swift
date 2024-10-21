@@ -1,4 +1,3 @@
-
 import Foundation
 import Libsql
 
@@ -25,4 +24,3 @@ let rows = try conn.query("""
 for row in rows {
     print(try row.get(0), try row.get(1))
 }
-
