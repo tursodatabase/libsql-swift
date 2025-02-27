@@ -212,7 +212,7 @@ public class Statement {
                 )
                 try errIf(bind.err)
             case .text(let text):
-                let len = text.count
+                let len = text.utf8.count
                 try text.withCString { text in
                     let bind = libsql_statement_bind_named(
                         self.inner,
@@ -260,7 +260,8 @@ public class Statement {
                 )
                 try errIf(bind.err)
             case .text(let text):
-                let len = text.count
+              
+                let len = text.utf8.count
                 try text.withCString { text in
                     let bind = libsql_statement_bind_value(
                         self.inner,
