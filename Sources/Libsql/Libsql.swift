@@ -418,7 +418,7 @@ public class Database {
                         desc.url = url
                         desc.auth_token = authToken
                         desc.encryption_key = encryptionKey
-                        desc.not_read_your_writes = !readYourWrites
+                        desc.disable_read_your_writes = !readYourWrites
                         desc.sync_interval = syncInterval
                         desc.webpki = withWebpki
                         

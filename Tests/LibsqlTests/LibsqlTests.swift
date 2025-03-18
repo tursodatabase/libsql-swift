@@ -30,7 +30,7 @@ final class LibsqlTests: XCTestCase {
         let conn = try db.connect()
         _ = try conn.executeBatch("""
             create table test (i integer, s text);
-            insert into test values (1, \"lorem ipsum\");
+            insert into test values (1, 'lorem ipsum');
         """)
         let row = try conn.query("select * from test").next()!;
 
