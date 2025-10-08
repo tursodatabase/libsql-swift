@@ -112,7 +112,7 @@ public class Row {
         case LIBSQL_TYPE_TEXT:
             let slice = result.ok.value.text
             defer { libsql_slice_deinit(slice) }
-            return .text(String(cString: slice.ptr.assumingMemoryBound(to: UInt8.self)))
+            return .text(slice.toString())
         case LIBSQL_TYPE_INTEGER:
             return .integer(result.ok.value.integer)
         case LIBSQL_TYPE_REAL:
@@ -351,6 +351,12 @@ public class Connection: Prepareable {
         
         return Statement(from: stmt)
     }
+    
+    public func lastInsertedRowID() throws -> Int64 {
+        let info = libsql_connection_info(self.inner)
+        try errIf(info.err)
+        return info.last_inserted_rowid
+    }
 }
 
 public class Database {
@@ -433,3 +439,36 @@ public class Database {
         }
     }
 }
+
+//MARK: - Swift type conversion helpers
+
+extension libsql_slice_t {
+    func toString() -> String {
+        return String(cString:self.ptr.assumingMemoryBound(to: UInt8.self))
+    }
+}
+
+
+//MARK: - Debugging integration
+
+extension Row : CustomDebugStringConvertible {
+    public var debugDescription: String {
+
+        let numCols = libsql_row_length( self.inner )
+        return (0..<numCols).map { columnIdx in
+            let nameSlice = libsql_row_name( self.inner, columnIdx)
+            defer { libsql_slice_deinit(nameSlice) }
+            let columnName = nameSlice.toString()
+            do
+            {
+                let columnValue = try self.get( columnIdx )
+                return "\t\(columnName):\t\(columnValue)"
+            } catch let err as LibsqlError {
+                return "\t\(columnName):\t\(err)"
+            } catch {
+                return "\t\(columnName):\t<unknown error>"
+            }
+        }.joined(separator: "\n")
+    }
+}
+
