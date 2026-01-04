@@ -8,7 +8,7 @@ final class LibsqlTests: XCTestCase {
         let db = try Database(":memory:")
         let _ = try db.connect()
     }
-    
+
     func testOpenDbFile() throws {
         let db = try Database("test.db")
         let _ = try db.connect()
@@ -19,7 +19,7 @@ final class LibsqlTests: XCTestCase {
         let conn = try db.connect()
         _ = try conn.execute("create table test (i integer, s text)")
         _ = try conn.execute("insert into test values (?, ?)", [1, "lorem ipsum"])
-        let row = try conn.query("select * from test").next()!;
+        let row = try conn.query("select * from test").next()!
 
         XCTAssertEqual(try row.getInt(0), 1)
         XCTAssertEqual(try row.getString(1), "lorem ipsum")
@@ -28,11 +28,12 @@ final class LibsqlTests: XCTestCase {
     func testExecuteBatch() throws {
         let db = try Database(":memory:")
         let conn = try db.connect()
-        _ = try conn.executeBatch("""
-            create table test (i integer, s text);
-            insert into test values (1, 'lorem ipsum');
-        """)
-        let row = try conn.query("select * from test").next()!;
+        _ = try conn.executeBatch(
+            """
+                create table test (i integer, s text);
+                insert into test values (1, 'lorem ipsum');
+            """)
+        let row = try conn.query("select * from test").next()!
 
         XCTAssertEqual(try row.getInt(0), 1)
         XCTAssertEqual(try row.getString(1), "lorem ipsum")
@@ -53,35 +54,35 @@ final class LibsqlTests: XCTestCase {
         let stmt = try conn.prepare("select ?").bind([1])
         XCTAssertEqual(try stmt.query().next()!.getInt(0), 1)
     }
-    
+
     func testTransaction() throws {
         let db = try Database(":memory:")
         let conn = try db.connect()
-        
+
         do {
             let tx = try conn.transaction()
             defer { tx.commit() }
-            
+
             _ = try tx.execute("create table test (i integer)")
-            _ = try tx.execute("insert into test values (:v)", [ ":v": 1 ])
+            _ = try tx.execute("insert into test values (:v)", [":v": 1])
         }
-        
+
         XCTAssertEqual(try conn.query("select * from test").next()!.getInt(0), 1)
     }
-    
+
     func testTransactionRollback() throws {
         let db = try Database(":memory:")
         let conn = try db.connect()
-        
+
         _ = try conn.execute("create table test (i integer)")
-        
+
         do {
             let tx = try conn.transaction()
             defer { tx.rollback() }
-            
-            _ = try tx.execute("insert into test values (:v)", [ ":v": 1 ])
+
+            _ = try tx.execute("insert into test values (:v)", [":v": 1])
         }
-        
+
         XCTAssert(try conn.query("select * from test").next() == nil)
     }
 
@@ -96,7 +97,7 @@ final class LibsqlTests: XCTestCase {
         for i in range {
             _ = try conn.execute(
                 "insert into test values (?, ?, ?, ?)",
-                [ i, "\(i)", exp(Double(i)), Data([UInt8(i)]) ]
+                [i, "\(i)", exp(Double(i)), Data([UInt8(i)])]
             )
         }
 
