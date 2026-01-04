@@ -41,28 +41,28 @@ public protocol Prepareable {
     func prepare(_ sql: String) throws -> Statement
 }
 
-public extension Prepareable {
-    func execute(_ sql: String) throws -> Int {
+extension Prepareable {
+    public func execute(_ sql: String) throws -> Int {
         return try self.prepare(sql).execute()
     }
-    
-    func execute(_ sql: String, _ params: [String: ValueRepresentable]) throws -> Int {
+
+    public func execute(_ sql: String, _ params: [String: ValueRepresentable]) throws -> Int {
         return try self.prepare(sql).bind(params).execute()
     }
-    
-    func execute(_ sql: String, _ params: [ValueRepresentable]) throws -> Int {
+
+    public func execute(_ sql: String, _ params: [ValueRepresentable]) throws -> Int {
         return try self.prepare(sql).bind(params).execute()
     }
-    
-    func query(_ sql: String) throws -> Rows {
+
+    public func query(_ sql: String) throws -> Rows {
         return try self.prepare(sql).query()
     }
-    
-    func query(_ sql: String, _ params: [String: ValueRepresentable]) throws -> Rows {
+
+    public func query(_ sql: String, _ params: [String: ValueRepresentable]) throws -> Rows {
         return try self.prepare(sql).bind(params).query()
     }
-    
-    func query(_ sql: String, _ params: [ValueRepresentable]) throws -> Rows {
+
+    public func query(_ sql: String, _ params: [ValueRepresentable]) throws -> Rows {
         return try self.prepare(sql).bind(params).query()
     }
 }
@@ -78,7 +78,7 @@ extension String? {
 }
 
 func errIf(_ err: OpaquePointer!) throws {
-    if (err != nil) {
+    if err != nil {
         defer { libsql_error_deinit(err) }
         throw LibsqlError.runtimeError(String(cString: libsql_error_message(err)!))
     }
@@ -87,6 +87,7 @@ func errIf(_ err: OpaquePointer!) throws {
 enum LibsqlError: Error {
     case runtimeError(String)
     case typeMismatch
+    case indexOutOfRange
 }
 
 public class Row {
@@ -99,11 +100,11 @@ public class Row {
 
         self.inner = inner
     }
-    
+
     public func get(_ index: Int32) throws -> Value {
         let result = libsql_row_value(self.inner, index)
         try errIf(result.err)
-       
+
         switch result.ok.type {
         case LIBSQL_TYPE_BLOB:
             let slice = result.ok.value.blob
@@ -125,28 +126,28 @@ public class Row {
     }
 
     public func getData(_ index: Int32) throws -> Data {
-        guard case let .blob(data) = try self.get(index) else {
+        guard case .blob(let data) = try self.get(index) else {
             throw LibsqlError.typeMismatch
         }
         return data
     }
 
     public func getDouble(_ index: Int32) throws -> Double {
-        guard case let .real(double) = try self.get(index) else {
+        guard case .real(let double) = try self.get(index) else {
             throw LibsqlError.typeMismatch
         }
         return double
     }
 
     public func getString(_ index: Int32) throws -> String {
-        guard case let .text(string) = try self.get(index) else {
+        guard case .text(let string) = try self.get(index) else {
             throw LibsqlError.typeMismatch
         }
         return string
     }
 
     public func getInt(_ index: Int32) throws -> Int {
-        guard case let .integer(int) = try self.get(index) else {
+        guard case .integer(let int) = try self.get(index) else {
             throw LibsqlError.typeMismatch
         }
         return Int(int)
@@ -167,12 +168,25 @@ public class Rows: Sequence, IteratorProtocol {
     public func next() -> Row? {
         let row = libsql_rows_next(self.inner)
         try! errIf(row.err)
-        
+
         if libsql_row_empty(row) {
             return nil
         }
-        
+
         return Row(from: row)
+    }
+
+    public func columnCount() -> Int {
+        return Int(libsql_rows_column_count(self.inner))
+    }
+
+    public func columnName(_ index: Int32) throws -> String {
+        guard index >= 0 && index < Int32(columnCount()) else {
+            throw LibsqlError.indexOutOfRange
+        }
+        let slice = libsql_rows_column_name(self.inner, index)
+        defer { libsql_slice_deinit(slice) }
+        return String(cString: slice.ptr.assumingMemoryBound(to: UInt8.self))
     }
 }
 
@@ -190,7 +204,7 @@ public class Statement {
     public func execute() throws -> Int {
         let exec = libsql_statement_execute(self.inner)
         try errIf(exec.err)
-        
+
         return Int(exec.rows_changed)
     }
 
@@ -200,7 +214,7 @@ public class Statement {
 
         return Rows(from: rows)
     }
-    
+
     public func bind(_ params: [String: ValueRepresentable]) throws -> Self {
         for (name, value) in params {
             switch value.toValue() {
@@ -246,8 +260,8 @@ public class Statement {
                 try errIf(bind.err)
             }
         }
-        
-        return self;
+
+        return self
     }
 
     public func bind(_ params: [ValueRepresentable]) throws -> Self {
@@ -260,7 +274,7 @@ public class Statement {
                 )
                 try errIf(bind.err)
             case .text(let text):
-              
+
                 let len = text.utf8.count
                 try text.withCString { text in
                     let bind = libsql_statement_bind_value(
@@ -288,18 +302,18 @@ public class Statement {
                 try errIf(bind.err)
             }
         }
-        
-        return self;
+
+        return self
     }
 }
 
 public class Transaction: Prepareable {
     var inner: libsql_transaction_t
-    
+
     public consuming func commit() {
         libsql_transaction_commit(self.inner)
     }
-    
+
     public consuming func rollback() {
         libsql_transaction_rollback(self.inner)
     }
@@ -307,19 +321,19 @@ public class Transaction: Prepareable {
     fileprivate init(from inner: libsql_transaction_t) {
         self.inner = inner
     }
-    
+
     public func executeBatch(_ sql: String) throws {
         let batch = libsql_transaction_batch(self.inner, sql)
         try errIf(batch.err)
     }
 
     public func prepare(_ sql: String) throws -> Statement {
-        let stmt = libsql_transaction_prepare(self.inner, sql);
+        let stmt = libsql_transaction_prepare(self.inner, sql)
         try errIf(stmt.err)
-        
+
         return Statement(from: stmt)
     }
-    
+
 }
 
 public class Connection: Prepareable {
@@ -332,23 +346,23 @@ public class Connection: Prepareable {
     fileprivate init(from inner: libsql_connection_t) {
         self.inner = inner
     }
-    
+
     public func transaction() throws -> Transaction {
         let tx = libsql_connection_transaction(self.inner)
-        try errIf(tx.err);
+        try errIf(tx.err)
 
         return Transaction(from: tx)
     }
-    
+
     public func executeBatch(_ sql: String) throws {
         let batch = libsql_connection_batch(self.inner, sql)
         try errIf(batch.err)
     }
 
     public func prepare(_ sql: String) throws -> Statement {
-        let stmt = libsql_connection_prepare(self.inner, sql);
+        let stmt = libsql_connection_prepare(self.inner, sql)
         try errIf(stmt.err)
-        
+
         return Statement(from: stmt)
     }
 }
@@ -368,7 +382,7 @@ public class Database {
     public func connect() throws -> Connection {
         let conn = libsql_database_connect(self.inner)
         try errIf(conn.err)
-        
+
         return Connection(from: conn)
     }
 
@@ -376,10 +390,10 @@ public class Database {
         self.inner = try path.withCString { path in
             var desc = libsql_database_desc_t()
             desc.path = path
-            
+
             let db = libsql_database_init(desc)
             try errIf(db.err)
-            
+
             return db
         }
     }
@@ -391,10 +405,10 @@ public class Database {
                 desc.url = url
                 desc.auth_token = authToken
                 desc.webpki = withWebpki
-                
+
                 let db = libsql_database_init(desc)
                 try errIf(db.err)
-                
+
                 return db
             }
         }
@@ -422,10 +436,10 @@ public class Database {
                         desc.disable_read_your_writes = !readYourWrites
                         desc.sync_interval = syncInterval
                         desc.webpki = withWebpki
-                        
+
                         let db = libsql_database_init(desc)
                         try errIf(db.err)
-                        
+
                         return db
                     }
                 }
