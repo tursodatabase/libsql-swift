@@ -1,59 +1,80 @@
 #!/usr/bin/env sh
 
-set -xe +f
+set -eu
+set -x
 
 cd libsql-c
 
 export IPHONEOS_DEPLOYMENT_TARGET=15.1
 
-function build_ios() {
-    iphone=/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk
-    iphonesimulator=/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator.sdk
+macos_sdk="$(xcrun --sdk macosx --show-sdk-path)"
+xcframework_root="../CLibsql.xcframework"
+xcframework_output="../CLibsql.xcframework.new"
 
-    CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
-    RUSTFLAGS="-C link-arg=-F$SDKROOT/System/Library/Frameworks"
-    CFLAGS="-DHAVE_GETHOSTUUID=0"
+rustup target add aarch64-apple-ios-macabi x86_64-apple-ios-macabi
 
-    SDKROOT="$iphone"
-    cargo build --target aarch64-apple-ios --release
+wrapper_dir="$(mktemp -d)"
+include_dir="$(mktemp -d)"
 
-    SDKROOT="$iphonesimulator"
-    cargo build --target x86_64-apple-ios --release
-
-    SDKROOT="$iphonesimulator"
-    cargo build --target aarch64-apple-ios-sim --release
-
-    mkdir -p ./target/universal-ios-sim/release
-
-    lipo \
-        ./target/x86_64-apple-ios/release/liblibsql.a \
-        ./target/aarch64-apple-ios-sim/release/liblibsql.a \
-        -create -output ./target/universal-ios-sim/release/liblibsql.a
+cleanup() {
+    rm -rf "$wrapper_dir" "$include_dir"
 }
 
-build_ios
+trap cleanup EXIT
 
-nix develop .# -c "./build.sh"
+cat > "$wrapper_dir/clang-macabi-wrapper" <<'EOF'
+#!/usr/bin/env sh
+set -eu
+real_clang="$(xcrun --find clang)"
+python3 - "$real_clang" "$@" <<'PY'
+import os
+import sys
 
-mkdir -p ./target/universal-macos/release
+real = sys.argv[1]
+args = [arg.replace("macabimacabi", "macabi") for arg in sys.argv[2:]]
+os.execv(real, [real, *args])
+PY
+EOF
+chmod +x "$wrapper_dir/clang-macabi-wrapper"
 
-lipo \
-    ./target/x86_64-apple-darwin/release/liblibsql.a \
-    ./target/aarch64-apple-darwin/release/liblibsql.a \
-    -create -output ./target/universal-macos/release/liblibsql.a
+build_maccatalyst() {
+    env \
+        -u IPHONEOS_DEPLOYMENT_TARGET \
+        SDKROOT="$macos_sdk" \
+        CC_aarch64_apple_ios_macabi="$wrapper_dir/clang-macabi-wrapper" \
+        cargo build --target aarch64-apple-ios-macabi --release
 
-rm -rf ../CLibsql.xcframework
+    env \
+        -u IPHONEOS_DEPLOYMENT_TARGET \
+        SDKROOT="$macos_sdk" \
+        CC_x86_64_apple_ios_macabi="$wrapper_dir/clang-macabi-wrapper" \
+        cargo build --target x86_64-apple-ios-macabi --release
 
-include_dir=`mktemp -d`
+    mkdir -p ./target/universal-maccatalyst/release
 
-cp ./libsql.h $include_dir/
-cp ../module.modulemap $include_dir/
+    lipo \
+        ./target/x86_64-apple-ios-macabi/release/liblibsql.a \
+        ./target/aarch64-apple-ios-macabi/release/liblibsql.a \
+        -create -output ./target/universal-maccatalyst/release/liblibsql.a
+}
+
+build_maccatalyst
+
+test -f "$xcframework_root/ios-arm64/liblibsql.a"
+test -f "$xcframework_root/ios-arm64_x86_64-simulator/liblibsql.a"
+test -f "$xcframework_root/macos-arm64_x86_64/liblibsql.a"
+
+cp ./libsql.h "$include_dir/"
+cp ../module.modulemap "$include_dir/"
+
+rm -rf "$xcframework_output"
 
 xcodebuild -create-xcframework \
-    -library ./target/universal-ios-sim/release/liblibsql.a -headers $include_dir \
-    -library ./target/aarch64-apple-ios/release/liblibsql.a -headers $include_dir \
-    -library ./target/universal-macos/release/liblibsql.a -headers $include_dir \
-    -output ../CLibsql.xcframework
+    -library "$xcframework_root/ios-arm64/liblibsql.a" -headers "$include_dir" \
+    -library "$xcframework_root/ios-arm64_x86_64-simulator/liblibsql.a" -headers "$include_dir" \
+    -library "$xcframework_root/macos-arm64_x86_64/liblibsql.a" -headers "$include_dir" \
+    -library ./target/universal-maccatalyst/release/liblibsql.a -headers "$include_dir" \
+    -output "$xcframework_output"
 
-rm -rf $include_dir
-
+rm -rf "$xcframework_root"
+mv "$xcframework_output" "$xcframework_root"
